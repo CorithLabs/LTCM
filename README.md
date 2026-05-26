@@ -140,6 +140,39 @@ The `Dockerfile` is a standard two-stage build (Node 20 Alpine). Works on any pl
 
 ---
 
+## The QA Life 🐛
+
+```mermaid
+flowchart TD
+    A["🔍 Found something weird"] --> B{Is it a bug?}
+
+    B -->|Yes| C{Does it affect users?}
+    B -->|"It's a feature"| Z["✅ Close the tab\nand move on"]
+
+    C -->|Yes| D{Can you reproduce it?}
+    C -->|Only me| E["🙏 Clear cache\nand pray"]
+
+    E --> F{Still broken?}
+    F -->|Yes| D
+    F -->|No| Z
+
+    D -->|Yes| G{How bad is it?}
+    D -->|"Only on full moon"| H["📝 Log as 'intermittent'\nand add 3 screenshots"]
+
+    G -->|💀 Critical| I["🚨 @ the dev\nright now"]
+    G -->|🔴 High| J["📋 File in LTCM\nwith full repro steps"]
+    G -->|🟡 Medium| K["📋 File in LTCM\n'pls fix when u can'"]
+    G -->|🟢 Low| L["📋 File in LTCM\nand forget about it"]
+
+    I --> M["🚀 Hotfix deployed\nat 11pm on a Friday"]
+    J --> N["📅 Next sprint\n(probably)"]
+    K --> N
+    L --> O["📅 Next sprint\n(definitely not)"]
+    H --> O
+```
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
