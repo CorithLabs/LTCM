@@ -37,7 +37,7 @@ router.post('/', upload.single('file'), async (req, res) => {
   try {
     const rc = await queryOne('SELECT id FROM run_cases WHERE id = $1', [req.params.runCaseId]);
     if (!rc) {
-      fs.unlinkSync(req.file.path);
+      fs.unlinkSync(path.join(ATTACHMENTS_DIR, req.file.filename));
       return res.status(404).json({ error: 'Run case not found', code: 'NOT_FOUND' });
     }
     const id = newId();
@@ -48,7 +48,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     const row = await queryOne('SELECT * FROM run_case_attachments WHERE id = $1', [id]);
     res.status(201).json(row);
   } catch (err) {
-    if (req.file) fs.unlink(req.file.path, () => {});
+    if (req.file) fs.unlink(path.join(ATTACHMENTS_DIR, req.file.filename), () => {});
     const e = dbErr(err); res.status(e.status).json({ error: e.error, code: e.code });
   }
 });

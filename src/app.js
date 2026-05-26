@@ -10,11 +10,17 @@ const { getDbConfig } = require('./dbConfig');
 const { isConnected, getPool } = require('./db');
 const { requireAuth } = require('./middleware/auth');
 const { logAccess, startLogCleanup } = require('./logger');
+const rateLimit = require('express-rate-limit');
+
+const globalLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 500, standardHeaders: true, legacyHeaders: false });
+const authLimiter  = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20,  standardHeaders: true, legacyHeaders: false });
 
 function createApp() {
   const app = express();
   app.use(compression());
   app.use(express.json({ limit: '10mb' }));
+  app.use('/api/', globalLimiter);
+  app.use('/api/v1/auth/login', authLimiter);
 
   // Session middleware
   app.use(session({
@@ -22,7 +28,12 @@ function createApp() {
     secret: process.env.SESSION_SECRET || 'ltcm-local-secret-change-in-prod',
     resave: false,
     saveUninitialized: false,
-    cookie: { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 }, // 7 days
+    cookie: {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    },
   }));
 
   // Access logging — after session so username is available
