@@ -1,0 +1,3 @@
+ALTER TABLE suites ADD COLUMN IF NOT EXISTS jira_epic_key  TEXT;
+ALTER TABLE suites ADD COLUMN IF NOT EXISTS jira_epic_name TEXT;
+ALTER TABLE suites ADD COLUMN IF NOT EXISTS jira_epic_url  TEXT;

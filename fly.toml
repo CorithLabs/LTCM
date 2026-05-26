@@ -1,0 +1,33 @@
+# fly.toml — LTCM on Fly.io
+# Replace "ltcm-app" with your actual app name after running: flyctl apps create
+
+app = "ltcm-app"
+primary_region = "yyz"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 200
+    soft_limit = 100
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+
+[[mounts]]
+  source = "appdata"
+  destination = "/app/data"
+  initial_size = "1gb"

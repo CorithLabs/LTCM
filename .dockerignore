@@ -1,0 +1,14 @@
+node_modules
+client/node_modules
+client/dist
+data
+.env.local
+*.log
+server.log
+test-results
+tests
+.git
+story-map.json
+build-log.md
+playwright.config.ts
+jest.config.js

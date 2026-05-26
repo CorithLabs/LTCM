@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ltcm
+      POSTGRES_USER: ltcm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ltcm_secret}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ltcm -d ltcm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-3050}:3000"
+    environment:
+      DATABASE_URL: postgresql://ltcm:${POSTGRES_PASSWORD:-ltcm_secret}@postgres:5432/ltcm
+      JIRA_ENCRYPTION_KEY: ${JIRA_ENCRYPTION_KEY}
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
+      NODE_ENV: production
+      PORT: 3000
+    volumes:
+      - appdata:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  appdata:

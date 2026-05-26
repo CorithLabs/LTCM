@@ -1,0 +1,1421 @@
+{
+  "id": "map_ltcm_20260411",
+  "name": "Lightweight Test Case Manager",
+  "projectKey": "LTCM",
+  "mode": "advanced",
+  "description": "A web application that replaces Excel-based manual QA workflows for small teams. Full-stack: Node.js + Express backend, React 18 frontend, PostgreSQL database. Supports multi-user access with role-based permissions (admin / tester). QA writes test cases, runs test sessions, logs pass/fail/skip/blocked results with notes and attachments, and exports clean reports.",
+  "goals": "Replace Excel as the primary test case management tool for small QA teams\nReduce time to log and review a test run by 50% vs spreadsheet\nProvide a shareable run report without manual formatting\nZero onboarding friction — usable within 5 minutes of install",
+  "outOfScope": "Jira CI/CD hooks or pipeline integration\nCloud sync or remote hosting\nEnvironment and configuration management\nPerformance/load testing support\nDashboards, burndown charts, or trend analytics\nFull-text Jira JQL search (deferred to v2.1)\nPushing test results back to Jira (deferred to v2.1)",
+  "stakeholders": "QA Engineer: Primary user — writes cases, executes runs, logs results\nAdmin: Manages users, projects, app configuration\nPM: Reviews run reports and history",
+  "engineeringNotes": "All API routes prefixed /api/v1/\nAuth: express-session + connect-pg-simple (session table in Postgres); bcrypt password hashing\nRoles: admin (full access), tester (read all projects, write only assigned)\nData persisted in PostgreSQL via pg library\nNumbered SQL migrations in /migrations tracked in schema_version table, run on startup\nSteps stored as JSON array column on test_cases table\nrun_cases: all case fields copied at run creation (snapshot) — edits to cases do not affect historical runs\nError responses: { error: string, code: string } on all 4xx/5xx\nNFR-01 (100ms) applies to all data API responses; PDF/CSV export endpoints are exempt\nJira API tokens encrypted with AES-256-GCM per user; key stored in .env.local, never returned by any API\nJira global config stores base URL only (admin sets). Per-user email + API token stored in jira_user_credentials table.\nLayout settings (app name, icon, favicon) stored in data/layout.json — not in DB\nIn production (npm start) Node serves client/dist on port 3000. In dev, Vite serves frontend on 5173, backend on 3000.\nDocker: multi-stage Dockerfile (builder + runtime). docker-compose.yml includes postgres service with healthcheck and app service with persistent data volume.",
+  "techStack": {
+    "components": ["frontend", "backend", "database", "testing", "secrets"],
+    "frontend": "React 18, TypeScript, Tailwind CSS, React Query (@tanstack/react-query), @dnd-kit/core, Vite",
+    "mobile": "",
+    "backend": "Node.js 20, Express 4, REST, Multer (file uploads), json2csv, cross-env, express-session, connect-pg-simple, bcrypt",
+    "database": "PostgreSQL via pg library; AES-256-GCM for Jira token encryption",
+    "messageQueue": "",
+    "infrastructure": "localhost or Docker. Single npm start command. Docker: multi-stage build, docker-compose with postgres service.",
+    "auth": "express-session with Postgres session store; bcrypt (cost 12); roles: admin / tester",
+    "testing": "Jest, Playwright (E2E), Supertest (API integration), MSW (frontend integration)",
+    "secrets": ".env.local — JIRA_ENCRYPTION_KEY (auto-generated 32-byte hex), PostgreSQL connection config, SESSION_SECRET",
+    "other": "Puppeteer (PDF export), child_process.spawn (server self-restart)"
+  },
+  "globalNfrs": [
+    {
+      "id": "NFR-01",
+      "category": "Performance",
+      "description": "All data API responses must return within 100ms for datasets up to 500 test cases. PDF and CSV export endpoints are explicitly exempt."
+    },
+    {
+      "id": "NFR-02",
+      "category": "Reliability",
+      "description": "All multi-step writes use PostgreSQL transactions with rollback on failure — DB must never be left in a corrupt state."
+    },
+    {
+      "id": "NFR-03",
+      "category": "Accessibility",
+      "description": "Core workflows (write case, run session, log result) must be fully keyboard-navigable with visible focus indicators."
+    },
+    {
+      "id": "NFR-04",
+      "category": "Reliability",
+      "description": "App starts with npm start and is accessible at http://localhost:3000 within 10 seconds, including DB init and migration execution."
+    },
+    {
+      "id": "NFR-05",
+      "category": "Reliability",
+      "description": "Run case results auto-saved with 500ms debounce after each status change or note input — no data loss if browser tab closed mid-run."
+    },
+    {
+      "id": "NFR-07",
+      "category": "Security",
+      "description": "Jira API tokens encrypted using AES-256-GCM before storage in PostgreSQL. Encryption key stored in .env.local and never returned by any API response."
+    },
+    {
+      "id": "NFR-08",
+      "category": "Reliability",
+      "description": "All Jira API calls proxied through backend. LTCM degrades gracefully if Jira is unreachable — local data always accessible, Jira-specific UI shows offline indicator."
+    }
+  ],
+  "releases": [
+    {
+      "id": "r1",
+      "label": "v1.0 — Core",
+      "color": "#6366f1",
+      "order": 0
+    },
+    {
+      "id": "r2",
+      "label": "v2.0 — Jira",
+      "color": "#0052cc",
+      "order": 1
+    },
+    {
+      "id": "r3",
+      "label": "v3.0 — PostgreSQL & Search",
+      "color": "#059669",
+      "order": 2
+    },
+    {
+      "id": "r4",
+      "label": "v3.1 — Run Ops & Attachments",
+      "color": "#d97706",
+      "order": 3
+    },
+    {
+      "id": "r5",
+      "label": "v3.2 — Auth, Users & Customisation",
+      "color": "#8b5cf6",
+      "order": 4
+    }
+  ],
+  "activities": [
+    {
+      "id": "act_008",
+      "label": "Authentication & Users",
+      "description": "Multi-user access with role-based permissions. Admin manages user accounts and project assignments. Per-user Jira credentials. Forced password change on first login.",
+      "epicId": null,
+      "epicSummary": null,
+      "order": 0,
+      "nfrs": [],
+      "screens": [
+        {
+          "id": "sc_016",
+          "name": "Login",
+          "route": "/login",
+          "navigatesFrom": "Unauthenticated redirect"
+        },
+        {
+          "id": "sc_017",
+          "name": "Change Password",
+          "route": "/change-password",
+          "navigatesFrom": "Forced on first login; Settings → change password"
+        },
+        {
+          "id": "sc_018",
+          "name": "Settings — Users",
+          "route": "/settings?tab=users",
+          "navigatesFrom": "Settings → Users tab (admin only)"
+        }
+      ],
+      "tasks": [
+        {
+          "id": "task_021",
+          "label": "Login & Session",
+          "description": "Users authenticate with username + password. Sessions persisted in Postgres. Forced password change on first login.",
+          "order": 0,
+          "apiContracts": [
+            {
+              "id": "c_051",
+              "method": "POST",
+              "endpoint": "/api/v1/auth/login",
+              "requestBody": "{ username, password }",
+              "responses": "200: { id, username, role, mustChangePassword } | 401: invalid credentials"
+            },
+            {
+              "id": "c_052",
+              "method": "POST",
+              "endpoint": "/api/v1/auth/logout",
+              "requestBody": "",
+              "responses": "204"
+            },
+            {
+              "id": "c_053",
+              "method": "GET",
+              "endpoint": "/api/v1/auth/me",
+              "requestBody": "",
+              "responses": "200: { id, username, role, mustChangePassword } | 401"
+            },
+            {
+              "id": "c_054",
+              "method": "POST",
+              "endpoint": "/api/v1/auth/change-password",
+              "requestBody": "{ currentPassword, newPassword }",
+              "responses": "200: { ok: true } | 400: wrong current password"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_023",
+              "title": "As a user I can log in and maintain a session across browser reloads",
+              "description": "AC: Unauthenticated users are redirected to /login\nAC: Login form accepts username + password; shows error on wrong credentials\nAC: Successful login redirects to the last visited page (or /)\nAC: Session persists across page reloads for 7 days\nAC: Logout clears session and redirects to /login\nAC: On first login, user is redirected to /change-password before accessing any other page\nAC: Admin account seeded automatically on first startup if no users exist\nAC: GET /api/v1/auth/me returns current session user",
+              "releaseId": "r5",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "Session cookie expired mid-session — next API call returns 401, frontend redirects to login\nAdmin changes own password — session remains active",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        },
+        {
+          "id": "task_022",
+          "label": "User Management",
+          "description": "Admin can create, deactivate, and reset passwords for tester accounts. Assign testers to projects at creation or via edit.",
+          "order": 1,
+          "apiContracts": [
+            {
+              "id": "c_055",
+              "method": "GET",
+              "endpoint": "/api/v1/users",
+              "requestBody": "",
+              "responses": "200: User[] — id, username, email, role, is_active"
+            },
+            {
+              "id": "c_056",
+              "method": "POST",
+              "endpoint": "/api/v1/users",
+              "requestBody": "{ username, email?, role, password }",
+              "responses": "201: User | 409: username taken"
+            },
+            {
+              "id": "c_057",
+              "method": "PATCH",
+              "endpoint": "/api/v1/users/:id",
+              "requestBody": "{ email?, is_active?, password? }",
+              "responses": "200: User"
+            },
+            {
+              "id": "c_058",
+              "method": "GET",
+              "endpoint": "/api/v1/projects/:id/members",
+              "requestBody": "",
+              "responses": "200: User[]"
+            },
+            {
+              "id": "c_059",
+              "method": "PUT",
+              "endpoint": "/api/v1/projects/:id/members",
+              "requestBody": "{ userIds: string[] }",
+              "responses": "200: User[]"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_024",
+              "title": "As an admin I can create and manage tester accounts",
+              "description": "AC: Settings → Users tab lists all users with role badge, email, active/inactive state\nAC: Create User form: username (required), email (optional), role (tester/admin), initial password\nAC: Deactivate/reactivate toggles is_active — inactive users cannot log in\nAC: Reset password sets a new password (admin does not need current password)\nAC: Admin cannot deactivate their own account\nAC: Tester accounts can only read all projects but only write to assigned ones",
+              "releaseId": "r5",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "Last active admin deactivated — prevented with error\nTester logs in and tries to edit unassigned project — 403 returned",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            },
+            {
+              "id": "story_025",
+              "title": "As an admin I can assign testers to projects",
+              "description": "AC: Create Project and Edit Project modals include a Testers picker (checkbox list of active users)\nAC: Selected testers are saved as project members\nAC: Tester can see all projects but can only log results on projects they are assigned to\nAC: Project member list accessible via GET /api/v1/projects/:id/members",
+              "releaseId": "r5",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "Removing all testers from a project — allowed; project becomes admin-only\nDeleting a user — removes them from all project member lists",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "act_001",
+      "label": "Infrastructure & Settings",
+      "description": "Foundation layer: PostgreSQL DB, numbered migrations, health check, backup/restore, DB config UI, server restart, offline detection, app customisation.",
+      "epicId": null,
+      "epicSummary": null,
+      "order": 1,
+      "nfrs": [
+        {
+          "id": "NFR-01",
+          "category": "Performance",
+          "description": "All data API responses must return within 100ms for datasets up to 500 test cases. PDF and CSV export are exempt."
+        },
+        {
+          "id": "NFR-02",
+          "category": "Reliability",
+          "description": "PostgreSQL writes that span multiple tables must use transactions with rollback on failure."
+        },
+        {
+          "id": "NFR-04",
+          "category": "Reliability",
+          "description": "App starts with npm start and is accessible at http://localhost:3000 within 10 seconds, including DB init and migration execution."
+        }
+      ],
+      "screens": [
+        {
+          "id": "sc_001",
+          "name": "Settings — Info",
+          "route": "/settings",
+          "navigatesFrom": "Nav settings icon"
+        },
+        {
+          "id": "sc_002",
+          "name": "Settings — System (Backup + Database)",
+          "route": "/settings?tab=system",
+          "navigatesFrom": "Settings → System tab"
+        },
+        {
+          "id": "sc_003",
+          "name": "Settings — Utilities",
+          "route": "/settings?tab=utilities",
+          "navigatesFrom": "Settings → Utilities tab"
+        },
+        {
+          "id": "sc_004",
+          "name": "DB Offline Screen",
+          "route": "* (overlay when DB unreachable)",
+          "navigatesFrom": "Automatic when health check fails"
+        },
+        {
+          "id": "sc_019",
+          "name": "Settings — Layout",
+          "route": "/settings?tab=layout",
+          "navigatesFrom": "Settings → Layout tab (admin only)"
+        }
+      ],
+      "tasks": [
+        {
+          "id": "task_001",
+          "label": "DB Initialisation & Migrations",
+          "description": "On startup, app connects to PostgreSQL, runs any pending numbered SQL migrations from /migrations in sequence, tracks applied migrations in schema_version table.",
+          "order": 0,
+          "apiContracts": [
+            {
+              "id": "c_001",
+              "method": "GET",
+              "endpoint": "/api/v1/health",
+              "requestBody": "",
+              "responses": "200: { status: 'ok'|'db_disconnected', dbHost, dbName, dbConnected, version }"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_001",
+              "title": "As a QA I can start the app and have the DB schema created automatically",
+              "description": "AC: App connects to PostgreSQL using config from .env.local or DB settings\nAC: All pending /migrations/*.sql files are executed in numeric order on startup\nAC: schema_version table tracks applied migrations — already-applied are skipped\nAC: Console prints each migration applied or 'Schema up to date'\nAC: GET /api/v1/health returns dbConnected: true when connected",
+              "releaseId": "r1",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "DB unreachable on startup — app starts in disconnected mode, does not crash\nMigration SQL is invalid — transaction rollback, error logged",
+              "dependencies": [
+                { "label": "PostgreSQL", "type": "external" }
+              ],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        },
+        {
+          "id": "task_002",
+          "label": "Database Config UI",
+          "description": "QA can configure PostgreSQL connection details from Settings → System. Supports test connection, save & reconnect, edit credentials.",
+          "order": 1,
+          "apiContracts": [
+            {
+              "id": "c_002",
+              "method": "GET",
+              "endpoint": "/api/v1/db/config",
+              "requestBody": "",
+              "responses": "200: { host, port, user, database, hasPassword }"
+            },
+            {
+              "id": "c_003",
+              "method": "POST",
+              "endpoint": "/api/v1/db/config",
+              "requestBody": "{ host, port, user, password, database }",
+              "responses": "200: { ok: true } | 502: { error, code: 'DB_CONNECT_FAILED' }"
+            },
+            {
+              "id": "c_004",
+              "method": "POST",
+              "endpoint": "/api/v1/db/test",
+              "requestBody": "{ host, port, user, password, database }",
+              "responses": "200: { ok: true } | 502: { error, code: 'DB_CONNECT_FAILED' }"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_002",
+              "title": "As a QA I can configure and test my PostgreSQL connection from Settings",
+              "description": "AC: Settings → System tab shows current DB connection details (host, port, db name, user, password masked)\nAC: Edit mode allows changing all fields\nAC: Test Connection verifies credentials without saving\nAC: Save & Connect saves and immediately reconnects the app\nAC: Password field shows placeholder if already set",
+              "releaseId": "r3",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "Saving invalid credentials — shows error, existing connection remains active\nDB becomes unreachable after save — health polling detects and shows offline screen",
+              "dependencies": [
+                { "label": "PostgreSQL", "type": "external" }
+              ],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        },
+        {
+          "id": "task_003",
+          "label": "DB Offline Detection",
+          "description": "When DB is unreachable, the app shows a full-screen offline notice instead of project content, with a link to Settings → System.",
+          "order": 2,
+          "apiContracts": [],
+          "stories": [
+            {
+              "id": "story_003",
+              "title": "As a QA I see a clear offline screen when the database is not reachable",
+              "description": "AC: Frontend polls GET /api/v1/health every 5 seconds\nAC: When dbConnected is false, a full-screen 'Database not reachable' screen replaces all content (except Settings)\nAC: Screen includes a 'Database settings' link that navigates to /settings?tab=system\nAC: Settings page remains accessible so the QA can fix the connection\nAC: When DB reconnects, the offline screen disappears automatically",
+              "releaseId": "r3",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "QA is mid-run when DB drops — offline screen appears, run state is preserved in DB once reconnected",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        },
+        {
+          "id": "task_004",
+          "label": "Backup & Restore",
+          "description": "QA can export all data as a JSON backup and restore from a previous backup.",
+          "order": 3,
+          "apiContracts": [
+            {
+              "id": "c_005",
+              "method": "GET",
+              "endpoint": "/api/v1/backup",
+              "requestBody": "",
+              "responses": "200: application/json — full DB export"
+            },
+            {
+              "id": "c_006",
+              "method": "POST",
+              "endpoint": "/api/v1/restore",
+              "requestBody": "multipart/form-data: { file: backup.json }",
+              "responses": "200: { restored: true } | 400: { error, code: 'INVALID_BACKUP' }"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_004",
+              "title": "As a QA I can export and restore a full data backup",
+              "description": "AC: Settings → System shows Export Backup and Import Backup buttons\nAC: Export downloads a JSON file with all projects, suites, cases, runs, run_cases\nAC: Import shows a confirm dialog warning that all existing data will be overwritten\nAC: After successful restore the page reloads\nAC: Invalid file formats are rejected with a clear error",
+              "releaseId": "r1",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "Restore file from a future schema version — rejected with SCHEMA_MISMATCH error",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        },
+        {
+          "id": "task_005",
+          "label": "Server Restart API & Button",
+          "description": "Backend exposes a restart endpoint. Settings → Utilities shows a Restart Server button.",
+          "order": 4,
+          "apiContracts": [
+            {
+              "id": "c_007",
+              "method": "POST",
+              "endpoint": "/api/v1/admin/restart",
+              "requestBody": "",
+              "responses": "200: { ok: true, message: 'Server restarting…' }"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_005",
+              "title": "As a QA I can restart the backend server from the Settings UI",
+              "description": "AC: Settings → Utilities shows a 'Restart Server' card with a button\nAC: Clicking the button calls POST /api/v1/admin/restart\nAC: Button shows spinner and 'Restarting…' while pending\nAC: Page reloads automatically after 4 seconds\nAC: Backend spawns a new node process via child_process.spawn and exits cleanly",
+              "releaseId": "r4",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "Server takes longer than 4s to restart — page reload may show brief error; user can manually refresh",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        },
+        {
+          "id": "task_020",
+          "label": "Layout Settings",
+          "description": "Admin can customise the app name, choose an icon from a preset library, and upload a favicon. Changes reflected on login page and browser tab.",
+          "order": 5,
+          "apiContracts": [
+            {
+              "id": "c_060",
+              "method": "GET",
+              "endpoint": "/api/v1/settings/layout",
+              "requestBody": "",
+              "responses": "200: { appName, iconName, hasFavicon } — public, no auth required"
+            },
+            {
+              "id": "c_061",
+              "method": "PATCH",
+              "endpoint": "/api/v1/settings/layout",
+              "requestBody": "{ appName?, iconName? }",
+              "responses": "200: { appName, iconName, hasFavicon }"
+            },
+            {
+              "id": "c_062",
+              "method": "POST",
+              "endpoint": "/api/v1/settings/layout/favicon",
+              "requestBody": "multipart/form-data: { file } — max 1MB, image types only",
+              "responses": "200: { hasFavicon: true }"
+            },
+            {
+              "id": "c_063",
+              "method": "DELETE",
+              "endpoint": "/api/v1/settings/layout/favicon",
+              "requestBody": "",
+              "responses": "204"
+            },
+            {
+              "id": "c_064",
+              "method": "GET",
+              "endpoint": "/api/v1/settings/layout/favicon",
+              "requestBody": "",
+              "responses": "200: image file | 404"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_026",
+              "title": "As an admin I can customise the app name, icon, and favicon",
+              "description": "AC: Settings → Layout tab (admin only) shows app name input, icon picker grid, and favicon upload section\nAC: Icon picker shows 17 preset Lucide icons as selectable squares with live preview\nAC: Changing app name or icon updates the sidebar branding, login page heading, and browser tab title immediately\nAC: Favicon upload accepts common image formats (PNG, ICO, SVG) up to 1MB; replaces existing favicon\nAC: Favicon delete removes file and reverts to default browser behaviour\nAC: GET /api/v1/settings/layout is public (no auth) so the login page can use branding before sign-in\nAC: Settings stored in data/layout.json — not in the database",
+              "releaseId": "r5",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "Favicon file too large — rejected with clear error, existing favicon unchanged\nApp name cleared — reverts to default 'LTCM'",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "act_002",
+      "label": "Project & Suite Management",
+      "description": "QA organises test cases into Projects (top-level containers) and Suites (feature/module groupings within a project). Includes display IDs, stats panels with All Time / Last Run toggle, and suite ordering.",
+      "epicId": null,
+      "epicSummary": null,
+      "order": 2,
+      "nfrs": [],
+      "screens": [
+        {
+          "id": "sc_005",
+          "name": "Projects List",
+          "route": "/",
+          "navigatesFrom": "Nav home or logo"
+        },
+        {
+          "id": "sc_006",
+          "name": "Project Overview",
+          "route": "/projects/:projectId",
+          "navigatesFrom": "Click project card"
+        },
+        {
+          "id": "sc_007",
+          "name": "Suite Page",
+          "route": "/projects/:projectId/suites/:suiteId",
+          "navigatesFrom": "Click suite card or nav suite row"
+        }
+      ],
+      "tasks": [
+        {
+          "id": "task_006",
+          "label": "Projects CRUD",
+          "description": "QA can create, rename, and delete projects. Projects list shows last run status. Demo projects can only be deleted by admins.",
+          "order": 0,
+          "apiContracts": [
+            {
+              "id": "c_008",
+              "method": "GET",
+              "endpoint": "/api/v1/projects",
+              "requestBody": "",
+              "responses": "200: Project[] — includes jira_project_key, is_demo, last_run_status"
+            },
+            {
+              "id": "c_009",
+              "method": "POST",
+              "endpoint": "/api/v1/projects",
+              "requestBody": "{ name, description?, jiraProjectKey?, userIds? }",
+              "responses": "201: Project | 400: validation error"
+            },
+            {
+              "id": "c_010",
+              "method": "PATCH",
+              "endpoint": "/api/v1/projects/:id",
+              "requestBody": "{ name?, description?, jiraProjectKey? }",
+              "responses": "200: Project"
+            },
+            {
+              "id": "c_011",
+              "method": "DELETE",
+              "endpoint": "/api/v1/projects/:id",
+              "requestBody": "",
+              "responses": "204 | 409: active run exists | 403: demo project, admin required"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_006",
+              "title": "As a QA I can create, rename and delete projects",
+              "description": "AC: Projects list shows all projects with name, description, last run status pill, Jira project key badge\nAC: Create project modal: name (required, max 100 chars), optional description, optional Jira Project Key, optional tester assignment\nAC: Edit project modal: same fields plus current tester list pre-loaded\nAC: Inline rename on project page\nAC: Delete blocked if an in-progress run exists — shows error\nAC: Delete requires confirmation dialog\nAC: Demo projects (is_demo = true) can only be deleted by admins — delete button hidden for testers",
+              "releaseId": "r1",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "Duplicate project name — allowed (no uniqueness constraint at project level)\nDelete last project — allowed, app shows empty state\nTester attempts to delete demo project — button not shown",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        },
+        {
+          "id": "task_007",
+          "label": "Suites CRUD & Ordering",
+          "description": "QA can create, rename, delete, and reorder suites within a project. Suites have TS-N display IDs.",
+          "order": 1,
+          "apiContracts": [
+            {
+              "id": "c_012",
+              "method": "GET",
+              "endpoint": "/api/v1/projects/:projectId/suites",
+              "requestBody": "",
+              "responses": "200: Suite[] with suite_number, case_count"
+            },
+            {
+              "id": "c_013",
+              "method": "POST",
+              "endpoint": "/api/v1/projects/:projectId/suites",
+              "requestBody": "{ name, description? }",
+              "responses": "201: Suite"
+            },
+            {
+              "id": "c_014",
+              "method": "PATCH",
+              "endpoint": "/api/v1/suites/:id",
+              "requestBody": "{ name?, description?, order? }",
+              "responses": "200: Suite"
+            },
+            {
+              "id": "c_015",
+              "method": "DELETE",
+              "endpoint": "/api/v1/suites/:id",
+              "requestBody": "",
+              "responses": "204"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_007",
+              "title": "As a QA I can manage suites within a project",
+              "description": "AC: Project overview shows suite cards with TS-N ID, name, case count, pass rate bar\nAC: Create suite from project overview or suite page\nAC: Inline rename by clicking the suite name in suite page header\nAC: Delete suite with confirmation — cascades to all cases\nAC: Suite sort order persisted; drag-to-reorder within project overview\nAC: TS-N IDs shown in nav sidebar and suite headers",
+              "releaseId": "r1",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "Delete suite with cases linked to completed runs — allowed; run snapshots are preserved",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        },
+        {
+          "id": "task_023",
+          "label": "All Time / Last Run Stats Toggle",
+          "description": "Project overview and suite page each have a toggle to switch the stats panel between All Time aggregated results and the latest run (with live refresh for in-progress runs).",
+          "order": 2,
+          "apiContracts": [],
+          "stories": [
+            {
+              "id": "story_027",
+              "title": "As a QA I can toggle the project overview stats between All Time and Last Run",
+              "description": "AC: Project overview stats panel has an 'All Time / Last Run' pill toggle in the top-right\nAC: All Time view shows aggregated pass/fail/skip/blocked/na bar + counts across all runs\nAC: Last Run view shows: status badge (Completed / In Progress), run number + name, date, View Report link, overall bar, and per-suite mini bars\nAC: In-progress runs auto-refresh every 5 seconds in Last Run view\nAC: Toggle selection persisted to localStorage per project (ltcm-proj-view-{projectId})\nAC: Panel hidden if no runs exist",
+              "releaseId": "r5",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "Run transitions from in-progress to completed while viewing — auto-refresh picks it up within 5s\nNo runs yet — stats panel not shown at all",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            },
+            {
+              "id": "story_028",
+              "title": "As a QA I can toggle the suite page stats between All Time and Last Run",
+              "description": "AC: Suite page stats bar has an 'All Time / Last Run' pill toggle in the top-right\nAC: All Time view shows aggregated pass/fail/skip/blocked/na bar and pass rate across all runs for that suite\nAC: Last Run view shows: status badge, run number, date, View Report link, overall bar for suite cases, and per-case status list\nAC: In-progress runs auto-refresh every 5 seconds\nAC: Toggle selection persisted to localStorage per suite (ltcm-suite-view-{suiteId})\nAC: Panel hidden if suite has no runs",
+              "releaseId": "r5",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "Suite cases in the latest run filtered by suite_name match — only relevant cases shown\nSuite not included in the latest run — shows run header with 0 cases",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "act_003",
+      "label": "Test Case Authoring",
+      "description": "QA writes, edits, duplicates, moves, reorders, and imports test cases. Cases have TC-N display IDs, steps, priority, preconditions, tags, and full execution history. Jira issue keys can be linked with or without Jira configured.",
+      "epicId": null,
+      "epicSummary": null,
+      "order": 3,
+      "nfrs": [],
+      "screens": [
+        {
+          "id": "sc_008",
+          "name": "New / Edit Test Case",
+          "route": "/projects/:projectId/cases/new | /cases/:caseId/edit",
+          "navigatesFrom": "Suite page → New Case or Edit button"
+        },
+        {
+          "id": "sc_009",
+          "name": "Case Detail Pane",
+          "route": "/projects/:projectId/suites/:suiteId/cases/:caseId",
+          "navigatesFrom": "Click case row in suite page"
+        }
+      ],
+      "tasks": [
+        {
+          "id": "task_008",
+          "label": "Test Case CRUD",
+          "description": "QA can create, edit, delete, duplicate, and move test cases between suites.",
+          "order": 0,
+          "apiContracts": [
+            {
+              "id": "c_016",
+              "method": "GET",
+              "endpoint": "/api/v1/suites/:suiteId/cases",
+              "requestBody": "",
+              "responses": "200: TestCase[] with case_number, last_run_status, last_run_id, last_run_number"
+            },
+            {
+              "id": "c_017",
+              "method": "POST",
+              "endpoint": "/api/v1/suites/:suiteId/cases",
+              "requestBody": "{ title, steps[], expected_result, preconditions?, priority?, tags? }",
+              "responses": "201: TestCase"
+            },
+            {
+              "id": "c_018",
+              "method": "PATCH",
+              "endpoint": "/api/v1/cases/:id",
+              "requestBody": "{ title?, steps?, expected_result?, preconditions?, priority?, order?, tags? }",
+              "responses": "200: TestCase"
+            },
+            {
+              "id": "c_019",
+              "method": "DELETE",
+              "endpoint": "/api/v1/cases/:id",
+              "requestBody": "",
+              "responses": "204"
+            },
+            {
+              "id": "c_020",
+              "method": "POST",
+              "endpoint": "/api/v1/cases/:id/duplicate",
+              "requestBody": "",
+              "responses": "201: TestCase (title prefixed 'Copy of …')"
+            },
+            {
+              "id": "c_021",
+              "method": "PATCH",
+              "endpoint": "/api/v1/cases/:id/move",
+              "requestBody": "{ suite_id }",
+              "responses": "200: TestCase"
+            },
+            {
+              "id": "c_022",
+              "method": "GET",
+              "endpoint": "/api/v1/cases/:id/history",
+              "requestBody": "",
+              "responses": "200: CaseHistoryEntry[] — all runs containing this case, ordered newest first"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_008",
+              "title": "As a QA I can write and manage test cases with steps and expected results",
+              "description": "AC: New Case form has: Suite selector, Title (required, max 100 chars), Preconditions (optional), Steps (at least 1 required, Enter to add new, Backspace on empty to remove), Expected Result (required), Priority (high/medium/low, default medium), Tags (optional, comma/space/Enter to add)\nAC: Add Step button appears below the steps list\nAC: TC-N display ID assigned automatically (globally sequential)\nAC: Edit form pre-fills all fields\nAC: Duplicate creates a copy with 'Copy of' prefix in same suite\nAC: Move shows other suites in a dropdown; case moves immediately\nAC: Drag-to-reorder within suite, order persisted",
+              "releaseId": "r1",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "Title > 100 chars — UI enforces max, backend validates\nSteps array empty on submit — validation error",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            },
+            {
+              "id": "story_009",
+              "title": "As a QA I can see the last run result and full run history for a case",
+              "description": "AC: Case list rows show a clickable status pill (PASS/FAIL/SKIP/BLOCKED/NA) for the last run\nAC: Clicking the pill navigates to the run summary\nAC: Case detail pane shows a 'Run History' section listing all runs, each with status pill, run number, and date\nAC: Clicking a history entry navigates to that run summary\nAC: History ordered newest first",
+              "releaseId": "r4",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "Case never run — no pill shown, history section hidden",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        },
+        {
+          "id": "task_009",
+          "label": "Excel Import",
+          "description": "QA can bulk-import test cases from an Excel file. A template is available for download.",
+          "order": 1,
+          "apiContracts": [
+            {
+              "id": "c_023",
+              "method": "POST",
+              "endpoint": "/api/v1/suites/:suiteId/cases/import",
+              "requestBody": "multipart/form-data: { file: .xlsx }",
+              "responses": "200: { imported, skipped, errors[] }"
+            },
+            {
+              "id": "c_024",
+              "method": "GET",
+              "endpoint": "/api/v1/cases/import-template",
+              "requestBody": "",
+              "responses": "200: application/vnd.openxmlformats — .xlsx template"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_010",
+              "title": "As a QA I can bulk-import test cases from Excel",
+              "description": "AC: Suite page header shows an Import button\nAC: Import accepts .xlsx files with columns: Title, Preconditions, Steps (newline-separated), Expected Result, Priority\nAC: Rows with missing Title or Expected Result are skipped with an error note\nAC: Import result summary shows imported count, skipped count, and per-row errors\nAC: Template download available from Settings → Utilities",
+              "releaseId": "r1",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "File is not a valid .xlsx — rejected with clear error\nAll rows invalid — 0 imported, all errors listed",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "act_004",
+      "label": "Test Run Execution",
+      "description": "QA starts a run, steps through each case marking Pass/Fail/Skip/Blocked/NA with notes and attachments, creates or links Jira bugs, and completes, cancels, or clones the run.",
+      "epicId": null,
+      "epicSummary": null,
+      "order": 4,
+      "nfrs": [
+        {
+          "id": "NFR-05",
+          "category": "Reliability",
+          "description": "Run case results must be auto-saved (debounce 500ms) after each status change or note input — no data loss if browser tab is closed mid-run."
+        }
+      ],
+      "screens": [
+        {
+          "id": "sc_010",
+          "name": "Start Run Modal",
+          "route": "/projects/:projectId (modal)",
+          "navigatesFrom": "Project overview → Start Run"
+        },
+        {
+          "id": "sc_011",
+          "name": "Run Execute",
+          "route": "/projects/:projectId/runs/:runId/execute",
+          "navigatesFrom": "Start Run or resume in-progress"
+        }
+      ],
+      "tasks": [
+        {
+          "id": "task_010",
+          "label": "Start & Execute a Run",
+          "description": "QA starts a run, optionally selecting specific suites and environment. Cases are snapshotted. QA steps through marking results.",
+          "order": 0,
+          "apiContracts": [
+            {
+              "id": "c_025",
+              "method": "POST",
+              "endpoint": "/api/v1/projects/:projectId/runs",
+              "requestBody": "{ name?, suite_ids?, environment?, jiraVersionId?, jiraVersionName? }",
+              "responses": "201: Run | 409: in-progress run exists | 400: no cases"
+            },
+            {
+              "id": "c_026",
+              "method": "GET",
+              "endpoint": "/api/v1/runs/:runId/cases",
+              "requestBody": "",
+              "responses": "200: RunCase[] — snapshot with status, note, step_results, case_number"
+            },
+            {
+              "id": "c_027",
+              "method": "PATCH",
+              "endpoint": "/api/v1/runs/:runId/cases/:caseId",
+              "requestBody": "{ status?, note?, stepResults? }",
+              "responses": "200: RunCase | 409: run completed"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_011",
+              "title": "As a QA I can start and execute a test run",
+              "description": "AC: Start Run modal shows run name (optional), suite selector (default all), environment (optional), Jira Fix Version (optional if Jira connected)\nAC: Only one in-progress run allowed per project\nAC: Cases are snapshotted at run creation — later edits to cases don't affect the run\nAC: Execute screen shows case list on left, case detail + verdict on right\nAC: Status buttons: Pass, Fail, Skip, Blocked, Not Applicable\nAC: Notes textarea auto-saves with 500ms debounce\nAC: Step-level pass/fail with actual result input\nAC: RUN-N and TC-N display IDs shown throughout",
+              "releaseId": "r1",
+              "testType": "e2e",
+              "openQuestions": "",
+              "edgeCases": "Suite has 0 cases — blocked from starting (backend returns 400)\nBrowser closed mid-run — results preserved on reload",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        },
+        {
+          "id": "task_011",
+          "label": "Attachments on Results",
+          "description": "QA can attach files (screenshots, logs) to individual run case results during execution.",
+          "order": 1,
+          "apiContracts": [
+            {
+              "id": "c_028",
+              "method": "GET",
+              "endpoint": "/api/v1/run-cases/:id/attachments",
+              "requestBody": "",
+              "responses": "200: Attachment[]"
+            },
+            {
+              "id": "c_029",
+              "method": "POST",
+              "endpoint": "/api/v1/run-cases/:id/attachments",
+              "requestBody": "multipart/form-data: { file } — max 20MB",
+              "responses": "201: Attachment | 404: run case not found"
+            },
+            {
+              "id": "c_030",
+              "method": "GET",
+              "endpoint": "/api/v1/attachments/:id/file",
+              "requestBody": "",
+              "responses": "200: binary file download"
+            },
+            {
+              "id": "c_031",
+              "method": "DELETE",
+              "endpoint": "/api/v1/attachments/:id",
+              "requestBody": "",
+              "responses": "204"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_012",
+              "title": "As a QA I can attach files to a run case result",
+              "description": "AC: Below the notes field in the execute screen, an 'Attachments' section shows an Attach button\nAC: Clicking Attach opens a file picker (any file type, max 20MB)\nAC: Attached files appear as a list with name, size, download and delete buttons\nAC: Files stored on disk in data/attachments/; metadata in run_case_attachments table\nAC: Deleting an attachment removes both DB row and file from disk\nAC: Attachments cascade-delete when run case is deleted",
+              "releaseId": "r4",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "File > 20MB — rejected with clear error\nServer disk full — upload fails gracefully with error message",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        },
+        {
+          "id": "task_012",
+          "label": "Complete, Cancel & Clone Runs",
+          "description": "QA can complete a run (locking results), cancel a run (discarding it), or clone a run (fresh copy with same cases).",
+          "order": 2,
+          "apiContracts": [
+            {
+              "id": "c_032",
+              "method": "PATCH",
+              "endpoint": "/api/v1/runs/:runId",
+              "requestBody": "{ status: 'completed', force_complete? }",
+              "responses": "200: Run with stats | 400: already completed"
+            },
+            {
+              "id": "c_033",
+              "method": "POST",
+              "endpoint": "/api/v1/runs/:runId/cancel",
+              "requestBody": "",
+              "responses": "200: { ok: true } | 400: not in-progress"
+            },
+            {
+              "id": "c_034",
+              "method": "POST",
+              "endpoint": "/api/v1/runs/:runId/clone",
+              "requestBody": "{ name? }",
+              "responses": "201: Run | 409: in-progress run exists"
+            },
+            {
+              "id": "c_035",
+              "method": "POST",
+              "endpoint": "/api/v1/runs/:runId/rerun",
+              "requestBody": "{ statuses?: string[] }",
+              "responses": "201: Run | 409: in-progress run exists"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_013",
+              "title": "As a QA I can complete, cancel, or clone a run",
+              "description": "AC: Execute header shows 'Cancel Run' (secondary, red hover) and 'Complete Run' (primary) buttons\nAC: Complete Run with unmarked cases prompts to force-skip remaining\nAC: Cancel Run requires confirmation — marks run as 'cancelled', restores project status to last completed run\nAC: Clone Run (from summary page) creates a new in-progress run with the same case snapshot and fresh statuses\nAC: Clone Run name defaults to 'Clone of {original name}'\nAC: Clone blocked if an in-progress run already exists",
+              "releaseId": "r4",
+              "testType": "e2e",
+              "openQuestions": "",
+              "edgeCases": "Completing run while another tab has it open — second tab shows 'Run completed' state on next poll",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            },
+            {
+              "id": "story_014",
+              "title": "As a QA I can re-run only the failed/blocked/skipped cases from a completed run",
+              "description": "AC: Run summary shows 'Re-run Failures' button when failed, blocked, or skipped cases exist\nAC: Clicking creates a new run containing only those cases (default: fail + blocked + skip)\nAC: New run navigates directly to execute screen\nAC: If an in-progress run already exists, shows error toast",
+              "releaseId": "r4",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "All cases passed — Re-run Failures button not shown",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "act_005",
+      "label": "Run History & Reporting",
+      "description": "QA and PM review past runs, view pass/fail/skip/blocked summaries, see a vs-last-run diff, and export clean PDF or CSV reports.",
+      "epicId": null,
+      "epicSummary": null,
+      "order": 5,
+      "nfrs": [],
+      "screens": [
+        {
+          "id": "sc_012",
+          "name": "Run History List",
+          "route": "/projects/:projectId/runs",
+          "navigatesFrom": "Project overview → Runs tab"
+        },
+        {
+          "id": "sc_013",
+          "name": "Run Summary",
+          "route": "/projects/:projectId/runs/:runId/summary",
+          "navigatesFrom": "Complete run or history list"
+        }
+      ],
+      "tasks": [
+        {
+          "id": "task_013",
+          "label": "Run Summary & Diff",
+          "description": "After completing a run, QA sees pass/fail/skip/blocked/na stats, a progress bar, per-case results, and a diff vs the previous run.",
+          "order": 0,
+          "apiContracts": [
+            {
+              "id": "c_036",
+              "method": "GET",
+              "endpoint": "/api/v1/runs/:runId/summary",
+              "requestBody": "",
+              "responses": "200: RunSummary { passed, failed, skipped, blocked, na, total, duration_ms, diff: { regressions, fixes, newCases }, defects[], cases[] }"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_015",
+              "title": "As a QA I can review a completed run with stats and a vs-last-run diff",
+              "description": "AC: Summary shows RUN-N heading, completion date/time, duration, environment, Jira version\nAC: Stats grid: Passed (green), Failed (red), Skipped (yellow), Blocked (orange), N/A (grey)\nAC: Pass rate calculated excluding Blocked and N/A\nAC: Progress bar shows proportional results\nAC: Diff section: Regressions (was passing, now failing), Fixes (was failing, now passing), New Cases\nAC: Cases table sorted: fail → blocked → pass → skip → na\nAC: TC-N shown per case",
+              "releaseId": "r1",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "First run — no diff shown\nAll cases N/A — pass rate shows 0% with note",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        },
+        {
+          "id": "task_014",
+          "label": "Export CSV & PDF",
+          "description": "QA can export run results as CSV or HTML (print-to-PDF) from the run summary.",
+          "order": 1,
+          "apiContracts": [
+            {
+              "id": "c_037",
+              "method": "GET",
+              "endpoint": "/api/v1/runs/:runId/export?format=csv",
+              "requestBody": "",
+              "responses": "200: text/csv with ID, Title, Suite, Status, Note columns"
+            },
+            {
+              "id": "c_038",
+              "method": "GET",
+              "endpoint": "/api/v1/runs/:runId/export?format=pdf",
+              "requestBody": "",
+              "responses": "200: text/html — print-to-PDF ready page"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_016",
+              "title": "As a QA I can export run results as CSV or PDF",
+              "description": "AC: Run summary shows CSV and PDF export buttons\nAC: CSV includes columns: ID (TC-N), Title, Suite, Priority, Status, Note\nAC: PDF opens a print-ready HTML page in a new tab\nAC: Both include run name, date, environment, stats summary in header\nAC: Export endpoints exempt from 100ms NFR",
+              "releaseId": "r1",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "Run with 0 cases — export produces header-only file",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "act_006",
+      "label": "Jira Integration",
+      "description": "QA connects LTCM to Jira Cloud, links test cases to issue keys (with or without Jira configured), creates defects with attachments, updates existing bugs, and associates runs with Fix Versions. Global config stores base URL only; each user manages their own credentials.",
+      "epicId": null,
+      "epicSummary": null,
+      "order": 6,
+      "nfrs": [
+        {
+          "id": "NFR-07",
+          "category": "Security",
+          "description": "Jira API tokens encrypted with AES-256-GCM before storage. Key in .env.local, never returned by API."
+        },
+        {
+          "id": "NFR-08",
+          "category": "Reliability",
+          "description": "LTCM degrades gracefully if Jira is unreachable — local data always accessible, Jira UI shows offline indicator."
+        }
+      ],
+      "screens": [
+        {
+          "id": "sc_014",
+          "name": "Settings — Jira",
+          "route": "/settings?tab=jira",
+          "navigatesFrom": "Settings → Jira tab"
+        }
+      ],
+      "tasks": [
+        {
+          "id": "task_015",
+          "label": "Jira Connection Config",
+          "description": "Admin sets the global Jira base URL. Each user saves their own email and API token (encrypted). Jira project key is per-project.",
+          "order": 0,
+          "apiContracts": [
+            {
+              "id": "c_039",
+              "method": "GET",
+              "endpoint": "/api/v1/jira/config",
+              "requestBody": "",
+              "responses": "200: { connected, baseUrl } — token never returned"
+            },
+            {
+              "id": "c_040",
+              "method": "POST",
+              "endpoint": "/api/v1/jira/config",
+              "requestBody": "{ baseUrl }",
+              "responses": "201: { connected: true, baseUrl }"
+            },
+            {
+              "id": "c_041",
+              "method": "PATCH",
+              "endpoint": "/api/v1/jira/config",
+              "requestBody": "{ baseUrl }",
+              "responses": "200: { connected: true, baseUrl }"
+            },
+            {
+              "id": "c_042",
+              "method": "DELETE",
+              "endpoint": "/api/v1/jira/config",
+              "requestBody": "",
+              "responses": "204"
+            },
+            {
+              "id": "c_065",
+              "method": "GET",
+              "endpoint": "/api/v1/jira/my-credentials",
+              "requestBody": "",
+              "responses": "200: { hasCredentials, email? }"
+            },
+            {
+              "id": "c_066",
+              "method": "POST",
+              "endpoint": "/api/v1/jira/my-credentials",
+              "requestBody": "{ email, apiToken }",
+              "responses": "200: { hasCredentials: true, email }"
+            },
+            {
+              "id": "c_067",
+              "method": "DELETE",
+              "endpoint": "/api/v1/jira/my-credentials",
+              "requestBody": "",
+              "responses": "204"
+            },
+            {
+              "id": "c_043",
+              "method": "POST",
+              "endpoint": "/api/v1/jira/test",
+              "requestBody": "",
+              "responses": "200: { ok: true, displayName } | 502: JIRA_UNREACHABLE"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_017",
+              "title": "As a QA I can connect LTCM to Jira Cloud with per-user encrypted credentials",
+              "description": "AC: Settings → Jira tab has two sections: Admin (base URL, admin only) and My Credentials (email + API token, per user)\nAC: Admin saves the global Jira base URL\nAC: Each user saves their own email and API token; token encrypted (AES-256-GCM) before writing to DB\nAC: Connected state shows base URL and credential email — token never displayed\nAC: Test Connection verifies and shows Jira display name using current user's credentials\nAC: Jira project key is set per-project (in Create/Edit Project modal)\nAC: Disconnect (admin) removes base URL; existing case links and run version refs preserved",
+              "releaseId": "r2",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "Jira unreachable during test — 502 with JIRA_UNREACHABLE code\nUser has no credentials but global config set — can still save issue keys (no summary enrichment)",
+              "dependencies": [
+                { "label": "Jira Cloud API", "type": "external" }
+              ],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        },
+        {
+          "id": "task_016",
+          "label": "Link Cases to Jira Issues",
+          "description": "QA can link/unlink test cases to Jira issue keys at any time — Jira connection is not required to save a key. When Jira is connected, links are enriched with issue summary and URL.",
+          "order": 1,
+          "apiContracts": [
+            {
+              "id": "c_044",
+              "method": "GET",
+              "endpoint": "/api/v1/jira/cases/:id/jira-links",
+              "requestBody": "",
+              "responses": "200: JiraLink[] — { id, case_id, jira_issue_key, jira_issue_summary, jira_issue_url, created_at }"
+            },
+            {
+              "id": "c_045",
+              "method": "POST",
+              "endpoint": "/api/v1/jira/cases/:id/jira-links",
+              "requestBody": "{ jiraIssueKey }",
+              "responses": "201: JiraLink | 404: issue not found in Jira (only when Jira configured) | 409: already linked"
+            },
+            {
+              "id": "c_046",
+              "method": "DELETE",
+              "endpoint": "/api/v1/jira/cases/:id/jira-links/:linkId",
+              "requestBody": "",
+              "responses": "204"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_018",
+              "title": "As a QA I can link a test case to one or more Jira issue keys",
+              "description": "AC: Case editor sidebar always shows a 'Linked Issues' section — visible regardless of Jira connection\nAC: Input accepts one or more keys (comma or space separated, e.g. PROJ-1, PROJ-2)\nAC: For existing cases: keys are linked immediately on Enter or click\nAC: For new (unsaved) cases: keys stored as pending — linked on save, discarded if not saved\nAC: When Jira is configured and user has credentials: issue summary and URL fetched and stored\nAC: When Jira not configured: key saved with null summary/URL; note shown explaining enrichment requires Jira setup\nAC: When Jira unreachable: key saved without enrichment (NFR-08 graceful degradation)\nAC: Linked issue keys shown as chips; clickable to open in Jira if URL available\nAC: Remove button unlinks the issue\nAC: Case list rows and detail pane show linked issue keys",
+              "releaseId": "r2",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "Issue key doesn't exist in Jira (when Jira configured) — 404 error shown, link not saved\nInvalid key format (not PROJ-123 pattern) — rejected with validation error",
+              "dependencies": [
+                { "label": "Jira Cloud API", "type": "external" }
+              ],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        },
+        {
+          "id": "task_017",
+          "label": "Create Defect & Update Existing Bug",
+          "description": "When a case fails or is blocked, QA can create a new Jira bug (with attachments) or update an existing bug (post comment + link). Two distinct buttons shown.",
+          "order": 2,
+          "apiContracts": [
+            {
+              "id": "c_047",
+              "method": "POST",
+              "endpoint": "/api/v1/runs/:runId/cases/:caseId/defect",
+              "requestBody": "multipart/form-data: { summary?, description?, issueType?, attachments[] }",
+              "responses": "201: { jiraIssueKey, jiraIssueUrl, attachmentResults[] }"
+            },
+            {
+              "id": "c_048",
+              "method": "POST",
+              "endpoint": "/api/v1/runs/:runId/cases/:caseId/jira-comment",
+              "requestBody": "{ issueKey }",
+              "responses": "200: { ok, issueKey, issueUrl } — also saves to case_jira_links"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_019",
+              "title": "As a QA I can create a new Jira bug with attachments from a failed case",
+              "description": "AC: When case status is fail or blocked and no defect created yet, Jira panel shows two buttons: 'Update Existing Bug' (orange) and 'Create New Bug' (red)\nAC: Create New Bug opens a modal with editable Summary (pre-filled with case title) and Description (pre-filled with steps/expected result/note)\nAC: Modal includes an Attachments section — QA can attach multiple files (max 20MB each)\nAC: On submit, Jira issue is created, then each file is uploaded to Jira via /attachments endpoint\nAC: Attachment upload failures are best-effort — issue is still created\nAC: Created issue key shown as a link; defect saved to case_jira_links",
+              "releaseId": "r4",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "Jira rejects issue creation (e.g. required custom field) — 502 error shown in modal\nAttachment upload fails — warning shown, issue creation succeeds",
+              "dependencies": [
+                { "label": "Jira Cloud API", "type": "external" }
+              ],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            },
+            {
+              "id": "story_020",
+              "title": "As a QA I can link a failed case to an existing Jira bug and post a comment",
+              "description": "AC: 'Update Existing Bug' button (orange) expands an inline input for the issue key\nAC: Pressing Enter or clicking the submit button posts a comment to the Jira issue with the test result summary\nAC: Issue key is saved to case_jira_links and shown in the existing links section\nAC: Issue summary fetched from Jira and stored with the link\nAC: Pressing Escape or X cancels without saving",
+              "releaseId": "r4",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "Issue key doesn't exist — Jira returns 404, error shown inline\nJira offline — error shown, link not saved",
+              "dependencies": [
+                { "label": "Jira Cloud API", "type": "external" }
+              ],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        },
+        {
+          "id": "task_018",
+          "label": "Fix Version on Runs",
+          "description": "QA can associate a run with a Jira Fix Version. On run complete, a comment is posted to all linked Jira issues.",
+          "order": 3,
+          "apiContracts": [
+            {
+              "id": "c_049",
+              "method": "GET",
+              "endpoint": "/api/v1/jira/versions",
+              "requestBody": "",
+              "responses": "200: JiraVersion[]"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_021",
+              "title": "As a QA I can tag a run with a Jira Fix Version and auto-comment on completion",
+              "description": "AC: Start Run modal shows Fix Version dropdown (populated from Jira if connected)\nAC: Selected version stored on the run (jira_version_id, jira_version_name)\nAC: Version name shown in run summary metadata\nAC: On run complete, a comment is posted to each Jira issue linked to a case in the run\nAC: Comment includes run name, all case results grouped by issue key\nAC: Comment failures are best-effort — run completion is not blocked",
+              "releaseId": "r2",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "Jira offline when completing run — comment posting skipped, toast shows partial failure",
+              "dependencies": [
+                { "label": "Jira Cloud API", "type": "external" }
+              ],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "act_007",
+      "label": "Search",
+      "description": "QA can search across the entire app using JQL-like syntax (field = 'value' AND field2 = 'value2') or plain keyword search. Results grouped by type.",
+      "epicId": null,
+      "epicSummary": null,
+      "order": 7,
+      "nfrs": [],
+      "screens": [
+        {
+          "id": "sc_015",
+          "name": "Search Page",
+          "route": "/search?q=...",
+          "navigatesFrom": "Global search bar (/ shortcut)"
+        }
+      ],
+      "tasks": [
+        {
+          "id": "task_019",
+          "label": "Global Search",
+          "description": "Search bar in nav supports JQL-like field queries and keyword fallback. Results show cases, suites, projects, and runs.",
+          "order": 0,
+          "apiContracts": [
+            {
+              "id": "c_050",
+              "method": "GET",
+              "endpoint": "/api/v1/search?q=...",
+              "requestBody": "",
+              "responses": "200: { cases: SearchCase[], suites: SearchSuite[], projects: SearchProject[], runs: SearchRun[] }"
+            }
+          ],
+          "stories": [
+            {
+              "id": "story_022",
+              "title": "As a QA I can search across the app with JQL-like syntax or keywords",
+              "description": "AC: Search bar in nav opens with / shortcut; focuses input\nAC: Typing navigates to /search?q=... with results grouped: Cases, Suites, Projects, Runs\nAC: JQL-like syntax supported: project = 'name', suite = 'name', tc = 'TC-123', priority = 'high', status = 'fail', runstatus = 'fail', run = 'RUN-5'\nAC: Multiple conditions joined with AND\nAC: Plain text falls back to keyword search across all types (50 cases, 20 suites, 10 projects, 20 runs)\nAC: Search hints popover shows available fields and clickable examples\nAC: Each result is a clickable card navigating to the relevant page",
+              "releaseId": "r3",
+              "testType": "integration",
+              "openQuestions": "",
+              "edgeCases": "No results — empty state with syntax hint shown\nMalformed JQL — falls back to keyword search",
+              "dependencies": [],
+              "pushed": false,
+              "jiraKey": null,
+              "done": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
