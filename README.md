@@ -1,5 +1,12 @@
 # LTCM — Lightweight Test Case Manager
 
+![version](https://img.shields.io/badge/version-3.1.0-6366f1?style=flat-square)
+![license](https://img.shields.io/github/license/CorithLabs/LTCM?style=flat-square&color=6366f1)
+![node](https://img.shields.io/badge/node-20+-339933?style=flat-square&logo=node.js&logoColor=white)
+![postgres](https://img.shields.io/badge/postgresql-16-4169e1?style=flat-square&logo=postgresql&logoColor=white)
+![docker](https://img.shields.io/badge/docker-ready-2496ed?style=flat-square&logo=docker&logoColor=white)
+![last commit](https://img.shields.io/github/last-commit/CorithLabs/LTCM?style=flat-square&color=22c55e)
+
 Ship with **QA-nfidence.** A self-hosted, open source test case manager for small QA teams — write cases, run sessions, log results, export reports.
 
 ```mermaid
