@@ -19,6 +19,9 @@ data/
 test-results/
 playwright-report/
 
+# Local deployment config (not for the repo)
+fly.toml
+
 # OS
 .DS_Store
 Thumbs.db
