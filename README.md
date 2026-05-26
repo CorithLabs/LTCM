@@ -91,22 +91,24 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 ## Hosting
 
-LTCM is designed to be self-hosted. Three common setups:
+LTCM is designed to be self-hosted via Docker. Three common setups:
 
-**VPS (DigitalOcean, Hetzner, Linode)**
-Run Docker Compose on any $6/month VM. Add nginx in front for HTTPS.
-
-**Fly.io**
+**VPS (DigitalOcean, Hetzner, Linode, AWS EC2, etc.)**
+Any Linux VM with Docker installed works. Steps:
 ```bash
-flyctl apps create ltcm-app
-flyctl secrets set SESSION_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
-flyctl postgres create   # attach and set DATABASE_URL
-flyctl deploy
+# On your server
+git clone https://github.com/CorithLabs/LTCM.git && cd LTCM
+cp .env.example .env.local
+# Edit .env.local — set a strong SESSION_SECRET
+docker compose up -d
 ```
-Edit `fly.toml` to set your app name before deploying.
+Put nginx in front for HTTPS. The app binds to port `3050` by default (`HOST_PORT` in `.env.local`).
 
 **Local network**
-Run on a dev machine and share the LAN IP with the team. Zero ops cost.
+Run on a shared dev machine and access it by IP. Zero ops cost — good for co-located teams.
+
+**Any container platform**
+The `Dockerfile` is a standard two-stage build (Node 20 Alpine). Works on any platform that runs Docker containers.
 
 ---
 
