@@ -89,6 +89,34 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 ---
 
+## Deployment Architecture
+
+```mermaid
+graph TD
+    User["👤 Browser / CI Script"]
+
+    subgraph Docker Compose
+        App["🟢 app\n(Node.js 20 · Express)\nport 3000 internal"]
+        DB["🐘 postgres\n(PostgreSQL 16)\nport 5432 internal"]
+    end
+
+    Volume1[("📦 pgdata\nPostgreSQL data")]
+    Volume2[("📁 appdata\nAttachments · Logs")]
+
+    Jira["☁️ Jira Cloud\n(optional)"]
+
+    User -->|"HTTP :3050 (HOST_PORT)"| App
+    App -->|"SQL queries"| DB
+    App -->|"REST API proxy"| Jira
+    DB --- Volume1
+    App --- Volume2
+```
+
+> The app container serves both the API and the pre-built React frontend.
+> PostgreSQL and app data are persisted in named Docker volumes — safe across `docker compose down` and restarts.
+
+---
+
 ## Hosting
 
 LTCM is designed to be self-hosted via Docker. Three common setups:
