@@ -1,6 +1,6 @@
 # LTCM — Lightweight Test Case Manager
 
-A self-hosted web app for small QA teams. Replaces Excel-based test case management with a clean UI for writing test cases, running test sessions, logging results, and exporting reports.
+Ship with **QA-nfidence.** A self-hosted, open source test case manager for small QA teams — write cases, run sessions, log results, export reports.
 
 ```mermaid
 sequenceDiagram
