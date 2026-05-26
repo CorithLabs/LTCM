@@ -139,29 +139,6 @@ graph TD
 
 ---
 
-## Hosting
-
-LTCM is designed to be self-hosted via Docker. Three common setups:
-
-**VPS (DigitalOcean, Hetzner, Linode, AWS EC2, etc.)**
-Any Linux VM with Docker installed works. Steps:
-```bash
-# On your server
-git clone https://github.com/CorithLabs/LTCM.git && cd LTCM
-cp .env.example .env.local
-# Edit .env.local — set a strong SESSION_SECRET
-docker compose up -d
-```
-Put nginx in front for HTTPS. The app binds to port `3050` by default (`HOST_PORT` in `.env.local`).
-
-**Local network**
-Run on a shared dev machine and access it by IP. Zero ops cost — good for co-located teams.
-
-**Any container platform**
-The `Dockerfile` is a standard two-stage build (Node 20 Alpine). Works on any platform that runs Docker containers.
-
----
-
 ## Tech Stack
 
 | Layer | Technology |
