@@ -2,7 +2,29 @@
 
 A self-hosted web app for small QA teams. Replaces Excel-based test case management with a clean UI for writing test cases, running test sessions, logging results, and exporting reports.
 
-**Source:** [github.com/CorithLabs/LTCM](https://github.com/CorithLabs/LTCM)
+```mermaid
+sequenceDiagram
+    actor PO as 🧑‍💼 Product Owner
+    actor Dev as 🧑‍💻 Developer
+    actor QA as 🧪 QA Engineer
+
+    PO->>Dev: Here's a ticket. Ship it by Friday.
+    Dev->>Dev: Ships it by Friday 🚀
+    PO->>QA: Can you test this?
+    QA->>QA: Opens Excel 😭
+    QA->>QA: Tries to remember test cases from last sprint
+    Note over QA: There has to be a better way...
+    QA->>QA: Finds LTCM on GitHub ⭐
+    QA->>Dev: 47 test cases written. Run started.
+    Dev->>Dev: Sweating 😰
+    QA->>Dev: TC-12 FAILED — steps to reproduce attached
+    QA->>Dev: TC-23 FAILED — here's the Jira ticket
+    QA->>Dev: TC-31 FAILED — and this one too
+    Dev->>PO: Friday won't work anymore 🙃
+    PO->>QA: Can you go easy on him?
+    QA->>PO: Run report exported. 31 passed, 16 failed.
+    Note over PO,QA: Shipped the right way. Eventually. ✅
+```
 
 ---
 
@@ -137,34 +159,6 @@ Run on a shared dev machine and access it by IP. Zero ops cost — good for co-l
 
 **Any container platform**
 The `Dockerfile` is a standard two-stage build (Node 20 Alpine). Works on any platform that runs Docker containers.
-
----
-
-## Why LTCM exists
-
-```mermaid
-sequenceDiagram
-    actor PO as 🧑‍💼 Product Owner
-    actor Dev as 🧑‍💻 Developer
-    actor QA as 🧪 QA Engineer
-
-    PO->>Dev: Here's a ticket. Ship it by Friday.
-    Dev->>Dev: Ships it by Friday 🚀
-    PO->>QA: Can you test this?
-    QA->>QA: Opens Excel 😭
-    QA->>QA: Tries to remember test cases from last sprint
-    Note over QA: There has to be a better way...
-    QA->>QA: Finds LTCM on GitHub ⭐
-    QA->>Dev: 47 test cases written. Run started.
-    Dev->>Dev: Sweating 😰
-    QA->>Dev: TC-12 FAILED — steps to reproduce attached
-    QA->>Dev: TC-23 FAILED — here's the Jira ticket
-    QA->>Dev: TC-31 FAILED — and this one too
-    Dev->>PO: Friday won't work anymore 🙃
-    PO->>QA: Can you go easy on him?
-    QA->>PO: Run report exported. 31 passed, 16 failed.
-    Note over PO,QA: Shipped the right way. Eventually. ✅
-```
 
 ---
 
