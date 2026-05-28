@@ -483,6 +483,7 @@ function JiraTab() {
   const edit = useEditJiraConfig()
   const remove = useDeleteJiraConfig()
   const [urlForm, setUrlForm] = useState('')
+  const [ltcmUrlForm, setLtcmUrlForm] = useState('')
   const [urlEditMode, setUrlEditMode] = useState(false)
   const [disconnectConfirm, setDisconnectConfirm] = useState(false)
 
@@ -500,15 +501,17 @@ function JiraTab() {
   // Admin: save/update base URL
   async function handleSaveUrl() {
     try {
+      const payload = { baseUrl: urlForm, ltcmBaseUrl: ltcmUrlForm || null }
       if (cfg?.connected) {
-        await edit.mutateAsync({ baseUrl: urlForm })
-        showToast('Jira base URL updated.', 'success')
+        await edit.mutateAsync(payload)
+        showToast('Jira server settings updated.', 'success')
       } else {
-        await save.mutateAsync({ baseUrl: urlForm })
-        showToast('Jira base URL saved.', 'success')
+        await save.mutateAsync(payload)
+        showToast('Jira server settings saved.', 'success')
       }
       setUrlEditMode(false)
       setUrlForm('')
+      setLtcmUrlForm('')
     } catch (e: any) { showToast(e.message || 'Save failed', 'error') }
   }
 
@@ -563,7 +566,7 @@ function JiraTab() {
               <span className="text-sm font-semibold text-text-primary">Jira Server (Admin)</span>
             </div>
             {cfg?.connected && !urlEditMode && (
-              <button className="btn-ghost text-xs flex items-center gap-1.5" onClick={() => { setUrlForm(cfg.baseUrl || ''); setUrlEditMode(true) }}>
+              <button className="btn-ghost text-xs flex items-center gap-1.5" onClick={() => { setUrlForm(cfg.baseUrl || ''); setLtcmUrlForm(cfg.ltcmBaseUrl || ''); setUrlEditMode(true) }}>
                 <Pencil size={12} /> Edit
               </button>
             )}
@@ -572,8 +575,15 @@ function JiraTab() {
           {cfg?.connected && !urlEditMode ? (
             <div className="space-y-3">
               <div className="flex gap-2 text-sm">
-                <span className="w-28 text-text-muted text-xs uppercase tracking-wide font-medium shrink-0">Base URL</span>
+                <span className="w-28 text-text-muted text-xs uppercase tracking-wide font-medium shrink-0">Jira Base URL</span>
                 <span className="font-mono text-text-primary text-xs break-all">{cfg.baseUrl}</span>
+              </div>
+              <div className="flex gap-2 text-sm">
+                <span className="w-28 text-text-muted text-xs uppercase tracking-wide font-medium shrink-0">LTCM Base URL</span>
+                {cfg.ltcmBaseUrl
+                  ? <span className="font-mono text-text-primary text-xs break-all">{cfg.ltcmBaseUrl}</span>
+                  : <span className="text-text-muted text-xs italic">Not set — remote links disabled</span>
+                }
               </div>
               <button
                 className="btn-ghost text-sm border border-border text-red-400 hover:text-red-300 inline-flex items-center gap-1.5"
@@ -598,6 +608,20 @@ function JiraTab() {
                   onChange={e => setUrlForm(e.target.value)}
                 />
               </div>
+              <div>
+                <label className="block text-xs text-text-muted mb-1">
+                  LTCM Base URL <span className="text-text-muted/60 font-normal">(optional — enables remote links on Jira tickets)</span>
+                </label>
+                <input
+                  className="input w-full text-sm"
+                  placeholder="https://ltcm.your-org.com"
+                  value={ltcmUrlForm}
+                  onChange={e => setLtcmUrlForm(e.target.value)}
+                />
+                <p className="text-xs text-text-muted/60 mt-1">
+                  When set, linking a test case to a Jira issue adds a web link on the Jira ticket pointing back to LTCM.
+                </p>
+              </div>
               <div className="flex gap-3">
                 <button
                   className="btn-primary text-sm"
@@ -605,10 +629,10 @@ function JiraTab() {
                   onClick={handleSaveUrl}
                 >
                   {(save.isPending || edit.isPending) ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}
-                  {cfg?.connected ? 'Update URL' : 'Save URL'}
+                  {cfg?.connected ? 'Update' : 'Save'}
                 </button>
                 {urlEditMode && (
-                  <button className="btn-ghost text-sm" onClick={() => { setUrlEditMode(false); setUrlForm('') }}>Cancel</button>
+                  <button className="btn-ghost text-sm" onClick={() => { setUrlEditMode(false); setUrlForm(''); setLtcmUrlForm('') }}>Cancel</button>
                 )}
               </div>
             </div>

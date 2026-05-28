@@ -84,7 +84,7 @@ export interface Run {
   created_by_username: string | null
 }
 export interface JiraConfig {
-  connected: boolean; baseUrl?: string
+  connected: boolean; baseUrl?: string; ltcmBaseUrl?: string | null
 }
 export interface JiraUserCredentials {
   hasCredentials: boolean; email?: string
@@ -512,7 +512,7 @@ export const useJiraConfig = () => useQuery({
 export const useSaveJiraConfig = () => {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (d: { baseUrl: string }) =>
+    mutationFn: (d: { baseUrl: string; ltcmBaseUrl?: string | null }) =>
       req<JiraConfig>('POST', '/jira/config', d),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['jiraConfig'] })
@@ -523,7 +523,7 @@ export const useSaveJiraConfig = () => {
 export const useEditJiraConfig = () => {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (d: { baseUrl: string }) =>
+    mutationFn: (d: { baseUrl: string; ltcmBaseUrl?: string | null }) =>
       req<JiraConfig>('PATCH', '/jira/config', d),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['jiraConfig'] })

@@ -5,6 +5,7 @@ const { requireAdmin } = require('../middleware/auth');
 const {
   ensureEncryptionKey, encrypt,
   getConfig, getDecryptedConfigForUser, jiraFetch,
+  addJiraRemoteLink, removeJiraRemoteLink,
 } = require('../jiraClient');
 
 ensureEncryptionKey();
@@ -14,15 +15,15 @@ router.get('/config', async (req, res) => {
   try {
     const cfg = await getConfig();
     if (!cfg) return res.json({ connected: false });
-    res.json({ connected: true, baseUrl: cfg.base_url });
+    res.json({ connected: true, baseUrl: cfg.base_url, ltcmBaseUrl: cfg.ltcm_base_url || null });
   } catch (err) {
     const e = dbErr(err); res.status(e.status).json({ error: e.error, code: e.code });
   }
 });
 
-// POST /api/v1/jira/config — admin only; saves global base URL
+// POST /api/v1/jira/config — admin only; saves global base URL and optional LTCM base URL
 router.post('/config', requireAdmin, async (req, res) => {
-  const { baseUrl } = req.body;
+  const { baseUrl, ltcmBaseUrl } = req.body;
   if (!baseUrl) {
     return res.status(400).json({ error: 'baseUrl is required', code: 'VALIDATION_ERROR' });
   }
@@ -32,21 +33,27 @@ router.post('/config', requireAdmin, async (req, res) => {
   } catch {
     return res.status(400).json({ error: 'Invalid Jira base URL format', code: 'VALIDATION_ERROR' });
   }
+  let normalisedLtcm = null;
+  if (ltcmBaseUrl) {
+    try { normalisedLtcm = new URL(ltcmBaseUrl).origin; } catch {
+      return res.status(400).json({ error: 'Invalid LTCM base URL format', code: 'VALIDATION_ERROR' });
+    }
+  }
   try {
     await run('DELETE FROM jira_config');
-    await run('INSERT INTO jira_config (id, base_url) VALUES ($1, $2)', [newId(), normalised]);
-    res.status(201).json({ connected: true, baseUrl: normalised });
+    await run('INSERT INTO jira_config (id, base_url, ltcm_base_url) VALUES ($1, $2, $3)', [newId(), normalised, normalisedLtcm]);
+    res.status(201).json({ connected: true, baseUrl: normalised, ltcmBaseUrl: normalisedLtcm });
   } catch (err) {
     const e = dbErr(err); res.status(e.status).json({ error: e.error, code: e.code });
   }
 });
 
-// PATCH /api/v1/jira/config — admin only; update base URL
+// PATCH /api/v1/jira/config — admin only; update base URL and/or LTCM base URL
 router.patch('/config', requireAdmin, async (req, res) => {
   try {
     const existing = await queryOne('SELECT * FROM jira_config LIMIT 1');
     if (!existing) return res.status(404).json({ error: 'No Jira config saved', code: 'NOT_CONFIGURED' });
-    const { baseUrl } = req.body;
+    const { baseUrl, ltcmBaseUrl } = req.body;
     if (!baseUrl) return res.status(400).json({ error: 'baseUrl is required', code: 'VALIDATION_ERROR' });
     let normalised;
     try {
@@ -54,8 +61,18 @@ router.patch('/config', requireAdmin, async (req, res) => {
     } catch {
       return res.status(400).json({ error: 'Invalid Jira base URL format', code: 'VALIDATION_ERROR' });
     }
-    await run('UPDATE jira_config SET base_url = $1 WHERE id = $2', [normalised, existing.id]);
-    res.json({ connected: true, baseUrl: normalised });
+    let normalisedLtcm = existing.ltcm_base_url;
+    if (ltcmBaseUrl !== undefined) {
+      if (ltcmBaseUrl === null || ltcmBaseUrl === '') {
+        normalisedLtcm = null;
+      } else {
+        try { normalisedLtcm = new URL(ltcmBaseUrl).origin; } catch {
+          return res.status(400).json({ error: 'Invalid LTCM base URL format', code: 'VALIDATION_ERROR' });
+        }
+      }
+    }
+    await run('UPDATE jira_config SET base_url = $1, ltcm_base_url = $2 WHERE id = $3', [normalised, normalisedLtcm, existing.id]);
+    res.json({ connected: true, baseUrl: normalised, ltcmBaseUrl: normalisedLtcm || null });
   } catch (err) {
     const e = dbErr(err); res.status(e.status).json({ error: e.error, code: e.code });
   }
@@ -301,6 +318,29 @@ router.post('/cases/:id/jira-links', async (req, res) => {
     const id = newId();
     await run('INSERT INTO case_jira_links (id, case_id, jira_issue_key, jira_issue_summary, jira_issue_url, link_type) VALUES ($1, $2, $3, $4, $5, $6)',
       [id, req.params.id, issueKey, issueSummary, issueUrl, 'manual']);
+
+    // Fire-and-forget: add a remote link on the Jira issue pointing back to this test case
+    setImmediate(async () => {
+      try {
+        const cfg = await getDecryptedConfigForUser(req.session.userId);
+        const ltcmBase = cfg?.ltcm_base_url;
+        if (!ltcmBase || !cfg?.api_token) return;
+        // Fetch suite and project IDs for building the URL
+        const caseRow = await queryOne(
+          'SELECT tc.title, tc.suite_id, s.project_id FROM test_cases tc JOIN suites s ON s.id = tc.suite_id WHERE tc.id = $1',
+          [req.params.id]
+        );
+        if (!caseRow) return;
+        const caseUrl = `${ltcmBase}/projects/${caseRow.project_id}/suites/${caseRow.suite_id}/cases/${req.params.id}`;
+        const remoteLinkId = await addJiraRemoteLink(issueKey, id, caseRow.title, ltcmBase, caseUrl, cfg);
+        if (remoteLinkId) {
+          await run('UPDATE case_jira_links SET jira_remote_link_id = $1 WHERE id = $2', [remoteLinkId, id]);
+        }
+      } catch (err) {
+        console.warn(`[jira-remotelink] post-insert silent fail: ${err.message}`);
+      }
+    });
+
     res.status(201).json(await queryOne('SELECT * FROM case_jira_links WHERE id = $1', [id]));
   } catch (err) {
     const e = dbErr(err); res.status(e.status).json({ error: e.error, code: e.code });
@@ -313,6 +353,20 @@ router.delete('/cases/:id/jira-links/:linkId', async (req, res) => {
     const link = await queryOne('SELECT * FROM case_jira_links WHERE id = $1 AND case_id = $2', [req.params.linkId, req.params.id]);
     if (!link) return res.status(404).json({ error: 'Link not found', code: 'NOT_FOUND' });
     await run('DELETE FROM case_jira_links WHERE id = $1', [req.params.linkId]);
+
+    // Fire-and-forget: remove the remote link from Jira
+    if (link.jira_remote_link_id) {
+      setImmediate(async () => {
+        try {
+          const cfg = await getDecryptedConfigForUser(req.session.userId);
+          if (!cfg?.api_token) return;
+          await removeJiraRemoteLink(link.jira_issue_key, link.jira_remote_link_id, cfg);
+        } catch (err) {
+          console.warn(`[jira-remotelink] delete silent fail: ${err.message}`);
+        }
+      });
+    }
+
     res.status(204).send();
   } catch (err) {
     const e = dbErr(err); res.status(e.status).json({ error: e.error, code: e.code });

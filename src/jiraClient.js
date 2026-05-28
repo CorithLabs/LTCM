@@ -282,6 +282,56 @@ async function fireJiraTransitions(caseId, event, userId, executorUsername) {
   }
 }
 
+/**
+ * Create a Jira remote link (web link) on an issue pointing back to the LTCM test case.
+ * Stores the returned remote link ID so it can be deleted later.
+ * Silent fail — never throws.
+ */
+async function addJiraRemoteLink(issueKey, linkId, caseTitle, ltcmBaseUrl, caseUrl, cfg) {
+  try {
+    if (!ltcmBaseUrl || !cfg || !cfg.api_token) return null;
+    const body = {
+      globalId: `ltcm-case-${linkId}`,
+      application: { type: 'com.ltcm', name: 'LTCM' },
+      relationship: 'tests',
+      object: {
+        url: caseUrl,
+        title: `LTCM: ${caseTitle}`,
+        icon: { url16x16: `${ltcmBaseUrl}/favicon.ico`, title: 'LTCM' },
+        status: { resolved: false, icon: {} },
+      },
+    };
+    const res = await jiraFetch(
+      cfg.base_url, cfg.email, cfg.api_token,
+      `/issue/${encodeURIComponent(issueKey)}/remotelink`,
+      { method: 'POST', body: JSON.stringify(body) }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.id ? String(data.id) : null;
+  } catch (err) {
+    console.warn(`[jira-remotelink] add silent fail for ${issueKey}: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * Delete a Jira remote link by its ID.
+ * Silent fail — never throws.
+ */
+async function removeJiraRemoteLink(issueKey, remoteLinkId, cfg) {
+  try {
+    if (!remoteLinkId || !cfg || !cfg.api_token) return;
+    await jiraFetch(
+      cfg.base_url, cfg.email, cfg.api_token,
+      `/issue/${encodeURIComponent(issueKey)}/remotelink/${encodeURIComponent(remoteLinkId)}`,
+      { method: 'DELETE' }
+    );
+  } catch (err) {
+    console.warn(`[jira-remotelink] remove silent fail for ${issueKey}: ${err.message}`);
+  }
+}
+
 module.exports = {
   getEncryptionKey,
   ensureEncryptionKey,
@@ -294,4 +344,6 @@ module.exports = {
   jiraUploadAttachment,
   buildRunComment,
   fireJiraTransitions,
+  addJiraRemoteLink,
+  removeJiraRemoteLink,
 };
