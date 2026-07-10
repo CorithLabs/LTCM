@@ -23,6 +23,7 @@ services:
       DATABASE_URL: postgresql://ltcm:${POSTGRES_PASSWORD:-ltcm_secret}@postgres:5432/ltcm
       JIRA_ENCRYPTION_KEY: ${JIRA_ENCRYPTION_KEY}
       SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
       NODE_ENV: production
       PORT: 3000
     volumes:
