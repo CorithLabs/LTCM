@@ -31,7 +31,9 @@ function createApp() {
     cookie: {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      // App is served over plain HTTP on localhost even in production mode —
+      // a Secure cookie would be dropped by the browser. Opt in via COOKIE_SECURE=true when behind HTTPS.
+      secure: process.env.COOKIE_SECURE === 'true',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     },
   }));
